@@ -1,0 +1,35 @@
+---
+- name: Wait for connection 
+  wait_for:
+    port: 22
+    host: "{{ swvm['name'] }}"
+    search_regex: SSH
+    delay: 30
+    timeout: 300
+
+# You will need to run this so Ansible can understand the underlying OS
+# for example, use 'yum' for the RedHat family of OSes, apt for Debian.
+- name: setup
+  setup:
+  delegate_to: "{{ swvm['name'] }}"
+
+- name: Install apache
+  ansible.builtin.package:
+    name: apache2
+    state: present
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+
+- name: Create a webpage
+  shell: 'echo "Hello. Ansible post-install play has finished." > /var/www/html/index.html'
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+
+- name: Start service httpd
+  ansible.builtin.service:
+    name: apache2
+    state: started
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+
+

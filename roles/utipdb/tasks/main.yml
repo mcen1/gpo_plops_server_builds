@@ -1,0 +1,24 @@
+---
+- name: Queue a qualys scan
+  community.mysql.mysql_query:
+    login_db: build
+    query:
+    - INSERT INTO qualysscan (servername,status) VALUES ("{{swvm['name']}}", "pending")
+    single_transaction: yes
+    login_user: "{{ utipdb_username }}"
+    login_password: "{{ utipdb_password }}"
+    login_host: api.company.com
+  ignore_errors: true
+  register: qualys_out
+
+- name: Register new build in DB
+  community.mysql.mysql_query:
+    login_db: build
+    query:
+    - INSERT INTO newbuilds (servername,builder) VALUES ("{{swvm['name']}}.{{swvm['domain']}}", "{{swvm['builder']}}")
+    single_transaction: yes
+    login_user: "{{ utipdb_username }}"
+    login_password: "{{ utipdb_password }}"
+    login_host: api.company.com
+  ignore_errors: true
+  register: newbuild_out

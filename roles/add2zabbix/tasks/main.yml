@@ -1,0 +1,50 @@
+---
+- name: Setup standard proxy list
+  set_fact:
+    zabproxies:
+      - "prox1.company.com"
+  when:  '"DMZ" not in swvm["cluster"]'
+
+- name: Setup DMZ standard proxy list
+  set_fact:
+    zabproxies:
+      - "dmzproxy1.company.com"
+  when:  '"DMZ" in swvm["cluster"]'
+
+- name: Add host record to zabbix
+  local_action:
+    module: zabbix_host
+    server_url: http://zabbixui.company.com/zabbix
+    login_user: "{{ zabbixusername }}"
+    login_password: "{{ zabbixpassword }}"
+    host_name: "{{swvm['name']}}.{{swvm['domain']}}" 
+    visible_name: "{{swvm['name']}}.{{swvm['domain']}}"
+    host_groups: "{{zabhostgroups}}"
+    link_templates: "{{zabtemplate}}"
+    status: enabled
+    state: present
+    inventory_mode: automatic
+    proxy: "{{ item }}"
+    interfaces:
+      - type: 1
+        main: 1
+        useip: 1
+        ip: "{{ serverip }}"
+        dns: "{{swvm['name']}}.{{swvm['domain']}}"
+        port: 10050
+  with_random_choice: "{{zabproxies}}"
+  ignore_errors: true
+  register: zabbix_out
+
+- name: Create 24 hour maintenance window for freshly built server
+  local_action:
+    module: zabbix_maintenance
+    name: "freshbuild_{{swvm['name']}}.{{swvm['domain']}}"
+    host_name: "{{swvm['name']}}.{{swvm['domain']}}"
+    state: present
+    minutes: 44640
+    server_url: http://zabbixui.company.com/zabbix
+    login_user: "{{zabbixusername}}"
+    login_password: "{{zabbixpassword}}"
+  ignore_errors: true
+

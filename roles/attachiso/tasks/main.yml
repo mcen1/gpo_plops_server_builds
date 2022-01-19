@@ -1,0 +1,75 @@
+---
+- name: Get CWD
+  shell:  pwd
+  register: mypwd
+
+- name: Get foreman host ID
+  uri:
+    url: "https://foreman.company.com:8443/api/hosts/?search={{swvm['name']}}.{{swvm['domain']}}"
+    method: GET
+    return_content: yes
+    status_code: 200
+    url_username: "{{foreman_username}}"
+    url_password: "{{foreman_password}}"
+    force_basic_auth: yes
+    validate_certs: no
+    body_format: "json"
+    use_proxy: no
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+  register: foremanid
+
+- name: Download ISO from Foreman to temporary directory
+  get_url:
+    url: "https://foreman.company.com:8443/bootdisk/api/hosts/{{foremanid['json']['results'][0]['id']}}"
+    dest: "{{mypwd.stdout}}/{{swvm['name']}}.iso"
+    mode: '0640'
+    url_username: "{{foreman_username}}"
+    url_password: "{{foreman_password}}"
+    force_basic_auth: yes
+    validate_certs: no
+
+# We use the deploy_vm["instance"]["hw_datastores"][0] because a real datastore is required, 
+# not a datastore cluster, for these vsphere_file and vsphere_copy steps.
+- name: Create ISO directory on a datastore
+  community.vmware.vsphere_file:
+    host: "{{swvm['vcenter']}}"
+    username: '{{vcenter_username}}'
+    password: '{{vcenter_password}}'
+    datacenter: '{{compatisopath}}'
+    datastore: '{{deploy_vm["instance"]["hw_datastores"][0]}}'
+    path: ansible-cache 
+    state: directory
+    timeout: 300
+    validate_certs: no
+
+- name: Upload ISO
+  community.vmware.vsphere_copy:
+    hostname: "{{swvm['vcenter']}}"
+    username: '{{vcenter_username}}'
+    password: '{{vcenter_password}}'
+    datacenter: '{{compatisopath}}'
+    datastore: '{{deploy_vm["instance"]["hw_datastores"][0]}}'
+    src: "{{mypwd.stdout}}/{{swvm['name']}}.iso"
+    path: "ansible-cache/{{swvm['name']}}.iso"
+    timeout: 300
+    validate_certs: no
+
+# Again, specify deploy_vm["instance"]["hw_datastores"][0] for ISO path and not datastore cluster.
+- name: Attach ISO to VM
+  community.vmware.vmware_guest:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    folder: "{{swvm['folder']}}"
+    name: "{{swvm['name']}}"
+    cluster: "{{swvm['cluster']}}"
+    datacenter: "{{swvm['datacenter']}}"
+    cdrom:
+      - controller_number: 0
+        unit_number: 0
+        state: present
+        type: iso
+        iso_path: "[{{deploy_vm['instance']['hw_datastores'][0]}}] ansible-cache/{{swvm['name']}}.iso"

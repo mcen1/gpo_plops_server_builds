@@ -1,0 +1,28 @@
+---
+- name: Set final status fact
+  set_fact:
+    final_status: "Puppet registration status:{{inpuppetresult.json.in_puppet|default('undefined')|to_nice_yaml}} Patching calendar status:{{patchcalresults|default('undefined')|to_nice_yaml|replace('\n','<br>')}} Cyberark creation status:{{cyberark_out.stdout|default('undefined')|to_nice_yaml|replace('\n','<br>')}} {{cyberark_out.stderr|default('undefined')|to_nice_yaml|replace('\n','<br>')}}<br><br>Zabbix creation status: {{zabbix_out|default('undefined')|to_nice_yaml|replace('\n','<br>')}}<br><br>iTop CI creation status: {{itop_output|default('undefined')|to_nice_yaml|replace('\n','<br>')}}<br><br>iTop link application solution to VM CI status: {{itop_lnk_output|default('undefined')|to_nice_yaml|replace('\n','<br>')}}<br><br>Qualys queue scan results: {{qualys_out|default('undefined')|to_nice_yaml|replace('\n','<br>')}}<br><br>Create entry in 'newbuild' db on cputip01 status:{{newbuild_out|default('undefined')|to_nice_yaml|replace('\n','<br>')}} "
+
+- name: Sending final status email summary
+  community.general.mail:
+    host: smtp.company.com
+    port: 25
+    to: "{{recipientemail}}"
+    subject: Ansible VM build report for {{ swvm["name"] }}
+    subtype: html
+    body: "{{final_status}}"
+  when: recipientemail is defined
+  ignore_errors: true
+
+- name: Send info to Teams
+  uri:
+    url: "https://swcompany.webhook.office.com/webhookb2/"
+    body: {
+      "type": "AdaptiveCard",
+      "title": "{{ swvm['name'] }} has been deployed.",
+      "text": "{{final_status}}"
+    }
+    body_format: json
+    method: POST
+    validate_certs: no
+  ignore_errors: true

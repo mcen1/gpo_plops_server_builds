@@ -1,0 +1,66 @@
+swvmconfigversion: 1.0
+# Optional: specify email to receive build report summary
+recipientemail: "someone@company.com"
+# These are properties within the virtual machine dictionary.
+swvm:
+  # Who built it? Preferably your adm ID.
+  builder: "username"
+  # Who requested it? Format as First_name Last_name (AD ID)."
+  requester: "Your name"
+  # Application solution for VM attribute and a puppet fact.
+  applicationsolution: "Test Server"
+  # The VM's name. Lowercase for all vCenters except Australia, which is all uppercase.
+  name: "testserver"
+  # The domain name
+  domain: "company.com"
+  # Your server's IP address. If in the Valspar bubble, use the bubble IP address.
+  ip: "10.1.2.3"
+  # The vCenter the VM should be in.
+  vcenter: "vcenter.company.com"
+  # The datacenter the VM should be in.
+  datacenter: "MYDC"
+  # The cluster the VM should be in.
+  cluster: "MYCLUSTER"
+  # The folder the VM should be in. Think about backup vs no-backup.
+  folder: "Linux"
+  # The vSphere network label for your VM (not Foreman)
+  network: "vmware-network-name"
+  # The datastore your VM needs to land on
+  datastore: "vmware-datastore-name"
+  # Max 3 additional vmdks. Example of 3 VMDKs of all size of 10 GB. Do not specify the OS VMDK.
+  #vmdks: [10,10,10]
+  vmdks: []
+  # The foreman-defined operating system 
+  foremanos: "UBUNTU 20"
+  # The foreman-defined subnet. Tends to be the first 3 octets followed by a .0. 
+  foremansubnet: "10.3.2.0"
+  # The foreman-defined partition table. MUST BE ASSOCIATED WITH THE foremanos DEFINED EARLIER! 
+  foremanptable: "SWUBUNTU20 Default Layout"
+  # The agent environment we use for /etc/puppetlabs/puppet/puppet.conf on the server
+  pupconfigfile: "pup_org"
+  # The contents of /opt/puppetlabs/facter/facts.d/server.txt
+  puppetfacts: |
+    custom_fact=something
+    custom_fact2=somethingelse
+  # VM BIOS compatiblity name. You shouldn't really need to change this until it starts to matter again.
+  guestid: "rhel7_64Guest"
+  # AMD64 for Ubuntu
+  architecture: "amd64"
+  # You really shouldn't need to change this, but one day we might have a different foreman PXE standard.
+  foremanpxe: "PXELinux BIOS"
+# What your VM's specs should look like, slightly analogous to the t-shirt sizes of yore
+vmspec: "vmspec1.yml"
+# The template within Zabbix to be used when creating the server inside Zabbix.
+zabtemplate: "Template_Linux"
+# What host groups the server should belong to inside Zabbix once created.
+zabhostgroups: 
+  - "Linux Prod"
+# You shouldn't need to change this unless you're installing in a very poorly-networked site.
+latencyspec: "latencyspec1.yml"
+# Shouldn't need to change this until the deployment workflow of a VM foundationally changes.
+vmdeploymentplan: "swvm_v1"
+# Shouldn't need to change this until we have geo-specific media available.
+foremanmedia: "{{swvm['foremanos']}} GEO: SOMEWHERE"
+# Whether or not this is a remote US site 
+usremotesite: no
+

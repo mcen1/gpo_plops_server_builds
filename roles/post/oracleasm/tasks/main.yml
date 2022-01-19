@@ -1,0 +1,43 @@
+---
+- name: Sleep for 2 minutes
+  pause:
+    minutes: 10
+
+- name: Wait for connection 
+  wait_for:
+    port: 22
+    host: "{{ swvm['name'] }}"
+    search_regex: SSH
+    delay: 30
+    timeout: 300
+
+# You will need to run this so Ansible can understand the underlying OS
+# for example, use 'yum' for the RedHat family of OSes, apt for Debian.
+- name: setup
+  setup:
+  delegate_to: "{{ swvm['name'] }}"
+
+- name: Install ASM packages
+  ansible.builtin.package:
+    name:
+      - oracleasmlib
+      - oracleasm-support
+      - sg3_utils
+    state: installed
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+
+- name: Initialize ASM
+  shell: /sbin/oracleasm init
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+
+
+- name: Include asmformatter loop
+  include_role:
+    name: "asmformatter"
+  #with_items: "{{ datacenters.datacenter_info }}"
+  loop: "{{ swvm['oracle_asm_disks'] }}"
+  loop_control:
+    loop_var: oracleasmdisk
+

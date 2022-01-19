@@ -1,0 +1,8 @@
+swvmspec:
+  cpus: 2
+  memory: 4096
+  scsi: "paravirtual"
+  nictype: "vmxnet3"
+  coresper: 2
+  hotaddcpu: yes
+  hotaddmemory: yes

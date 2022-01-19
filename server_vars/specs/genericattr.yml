@@ -1,0 +1,5 @@
+genericvmattributes:
+  vm.build.type: "Automated"
+  vm.notools: "False"
+  vm.expiration.renewable: "Yes"
+  vm.hw.upgradable: "Yes"

@@ -1,0 +1,9 @@
+collections:
+  - name: https://github.company.com/org/ansible_snow_collection 
+    type: git
+    version: master
+    
+  - name: https://github.company.com/org/ansible_collection
+    type: git
+    version: master
+

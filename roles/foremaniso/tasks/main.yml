@@ -1,0 +1,53 @@
+---
+#- debug:
+#    var: deploy_vm
+- name: "Delete in foreman if exists"
+  theforeman.foreman.host: 
+    username: "{{ foreman_username }}"
+    password: "{{ foreman_password }}"
+    server_url: "https://foreman.company.com:8443"
+    name: "{{swvm['name']}}.{{swvm['domain']}}"
+    state: absent
+    validate_certs: no
+
+- name: "Create a foreman host"
+  theforeman.foreman.host:
+    username: "{{ foreman_username }}"
+    password: "{{ foreman_password }}"
+    server_url: "https://foreman.company.com:8443"
+    name: "{{swvm['name']}}.{{swvm['domain']}}"
+    ptable: "{{swvm['foremanptable']}}"
+    mac: "{{deploy_vm['instance']['hw_eth0']['macaddress']}}"
+    state: present
+    ip: "{{serverip}}"
+    domain: "{{swvm['domain']}}"
+    architecture: "{{swvm['architecture']}}"
+    operatingsystem: "{{swvm['foremanos']}}"
+    root_pass: "{{ rootpass.stdout }}"
+    subnet: "{{swvm['foremansubnet']}}"
+    validate_certs: no
+    build: yes
+    medium: "{{foremanmedia}}"
+    pxe_loader: "{{swvm['foremanpxe']}}"
+    provision_method: "build"
+    owner: "automation"
+    managed: yes
+    enabled: yes
+    parameters:
+      - name: 'jobnumber'
+        value: 'ansible'
+      - name: 'appsol'
+        value: "{{swvm['applicationsolution']}}"
+      - name: 'pupconfigfile'
+        value: "{{swvm['pupconfigfile']}}"
+      - name: 'puppetfacts'
+        value: "{{swvm['puppetfacts']}}"
+      - name: 'metafacts'
+        value: |
+          custom_admin_builder={{swvm['builder']}}
+          custom_builddate={{current_date.stdout}}
+          custom_applicationsolution={{swvm['applicationsolution']}}
+          custom_buildstamp=ansible_{{vmdeploymentplan}}
+  register: foreman_out
+
+

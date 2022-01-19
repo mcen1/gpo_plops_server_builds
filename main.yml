@@ -1,0 +1,22 @@
+---
+- hosts: 127.0.0.1
+#  connection: local
+  gather_facts: false 
+  become: false
+  vars_files:
+    - "{{ credfile }}"
+    - "{{ varfile }}"
+    - "server_vars/specs/{{vmspec}}"
+    - "server_vars/specs/{{latencyspec}}"
+  tasks:
+    - name: Include pre-deployment roles if defined
+      include_role:
+        name: "pre/{{ vmdeploymentpre }}"
+      when: vmdeploymentpre is defined
+    - name: Include main deployment role
+      include_role:
+        name: "{{ vmdeploymentplan }}"
+    - name: Include post-deployment role if defined
+      include_role:
+        name: "post/{{ vmdeploymentpost }}"
+      when: vmdeploymentpost is defined

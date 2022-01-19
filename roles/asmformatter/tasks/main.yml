@@ -1,0 +1,113 @@
+---
+- name: Set disk type to thin
+  set_fact:
+    asm_disk_type: "thin"
+  when: oracleasmdisk['shared'] is not defined or not  oracleasmdisk['shared']
+
+- name: Set disk type to eagerzeroedthick
+  set_fact:
+    asm_disk_type: "eagerzeroedthick"
+  when: oracleasmdisk['shared'] is defined and oracleasmdisk['shared']
+
+- name: Set sharing fact to True
+  set_fact:
+    asm_disk_shared: True
+  when: oracleasmdisk['shared'] is defined and oracleasmdisk['shared']
+
+- name: Set sharing fact to False
+  set_fact:
+    asm_disk_shared: False
+  when: oracleasmdisk['shared'] is not defined or not  oracleasmdisk['shared']
+
+- name: Set disk persistence
+  set_fact:
+    asm_disk_persistence: "persistent"
+  when: oracleasmdisk['shared'] is not defined or not oracleasmdisk['shared']
+
+- name: Set disk persistence to independent_persistent for a shared disk
+  set_fact:
+    asm_disk_persistence: "independent_persistent"
+  when: oracleasmdisk['shared'] is defined and oracleasmdisk['shared']
+
+
+
+#loop var is oracleasmdisk
+- name: Attach ASM disk of size {{ oracleasmdisk['size'] }}
+  community.vmware.vmware_guest_disk:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    folder: '{{swvm["folder"]}}'
+    name: '{{swvm["name"]}}'
+    datacenter: '{{swvm["datacenter"]}}'
+    disk:
+    - size_gb: "{{ oracleasmdisk['size'] }}"
+      type: "{{asm_disk_type}}"
+      datastore: '{{swvm["datastore"]}}'
+      controller_type: "{{swvmspec['scsi']}}"
+      controller_number: "{{oracleasmdisk['scsi_controller']}}"
+      scsi_controller: "{{oracleasmdisk['scsi_controller']}}"
+      unit_number: "{{oracleasmdisk['unit_number']}}"
+      sharing: "{{asm_disk_shared}}"
+      disk_mode: "{{asm_disk_persistence}}"
+  when: oracleasmdisk['path'] is not defined
+
+# Note about 'sharing' for ASM disk:
+# This basically does not work and I'm not sure it will ever work with how our process works.
+# Need an ansible module or a python script to create the VMDK, unattach it from the VM, then move it to its own folder on the datastore
+# and then reattach it. Kind of a pain!
+# Might also need to have the SCSI controller "share" out disks. Possibly all disks too?
+
+- name: Attach ASM disk by path {{ oracleasmdisk['path'] }}
+  community.vmware.vmware_guest_disk:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    folder: '{{swvm["folder"]}}'
+    name: '{{swvm["name"]}}'
+    datacenter: '{{swvm["datacenter"]}}'
+    disk:
+    - filename: "{{ oracleasmdisk['path'] }}"
+      scsi_controller: "{{oracleasmdisk['scsi_controller']}}"
+      controller_type: "{{swvmspec['scsi']}}"
+      controller_number: "{{oracleasmdisk['scsi_controller']}}"
+      unit_number: "{{oracleasmdisk['unit_number']}}"
+  when: oracleasmdisk['path'] is defined 
+
+- name: Rescan SCSI bus
+  shell: rescan-scsi-bus.sh -a
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+
+- name: Get last SCSI device
+  shell: lsblk -r --output NAME,MOUNTPOINT | awk -F \/ '/sd/ { dsk=substr($1,1,3);dsks[dsk]+=1 } END { for ( i in dsks ) { if (dsks[i]==1) print i } }' | tail -n 1
+  register: osscsidevice
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+  when: oracleasmdisk['path'] is not defined 
+
+- name: Format SCSI device {{osscsidevice.stdout}}
+  shell:
+    cmd: |
+      echo formatting /dev/{{osscsidevice.stdout}} ...
+      (
+      echo n # Add a new partition
+      echo p # Primary partition
+      echo 1 # Partition number
+      echo   # First sector (Accept default: 1)
+      echo   # Last sector (Accept default: varies)
+      echo w # Write changes
+      ) | /sbin/fdisk /dev/{{osscsidevice.stdout}}
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+  when: oracleasmdisk['path'] is not defined 
+
+- name: Format ASM as {{oracleasmdisk['disk_name']}} for {{osscsidevice.stdout}}
+  shell: "/sbin/oracleasm createdisk {{oracleasmdisk['disk_name']}} /dev/{{osscsidevice.stdout}}1"
+  delegate_to: "{{ swvm['name'] }}"
+  become: true
+  when: oracleasmdisk['path'] is not defined 
+
+

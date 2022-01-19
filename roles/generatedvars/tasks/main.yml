@@ -1,0 +1,83 @@
+---
+- name: Generate current date fact
+  shell: date +%Y-%m-%d
+  register: current_date
+
+- name: Generate expiry date
+  shell: date +%Y-%m-%d -d "+2 years"
+  register: expiration_date
+
+- name: Generate a root password
+  shell: date +%s | sha256sum | base64 | head -c 16 ; echo
+  register: rootpass
+
+- name: Determine our IP
+  set_fact:
+    serverip: "{{swvm['ip']}}"
+  when: swvm['ip']!='autogen'
+
+# Generate compatisopath based on vCenter name for vsphere_copy and vsphere_file compat
+- name: Generate iso compatible URL
+  set_fact:
+    compatisopath: '{{swvm["datacenter"]}}'
+
+- name: Generate iso compatible URL vcenter1
+  set_fact:
+    compatisopath: 'Locale/{{swvm["datacenter"]}}'
+  when:  swvm['vcenter']=="vcenter1.company.com"
+
+- name: Generate iso compatible URL vcenter2 
+  set_fact:
+    compatisopath: 'Locale2/{{swvm["datacenter"]}}'
+  when:  swvm['vcenter']=="vcenter2.company.com"
+
+- name: Generate iso compatible URL for US remote sites
+  set_fact:
+    compatisopath: 'Remote_Sites/{{swvm["datacenter"]}}'
+  when:  usremotesite is defined and usremotesite 
+
+- debug:
+    msg: "Root password: {{ rootpass.stdout }}"
+
+# Let's be nice and do people a favor and simplify how much info they need to fill in.
+# Retrieve this data for our VM attributes based on application solution.
+- name: Get iTop facts about appsol owner
+  plops.general.ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.company.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'ApplicationSolution'
+    oql_query: "SELECT ApplicationSolution WHERE name = '{{swvm['applicationsolution']}}'" 
+    validate_certs: no
+    itop_fields: 'owner,costcenter'
+  register: itop_appsol
+
+- name: Get iTop facts about appsol email
+  plops.general.ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.company.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'Contact'
+    oql_query: "SELECT Contact AS p JOIN lnkContactToFunctionalCI AS l1 ON l1.contact_id=p.id JOIN FunctionalCI AS t ON l1.functionalci_id=t.id WHERE t.name='{{swvm['applicationsolution']}}'" 
+    validate_certs: no
+    itop_fields: 'email'
+  register: itop_appsol_email
+
+- name: Fail playbook when appsol costcenter undefined
+  fail:
+    msg: "Application solution costcenter is not found in iTop."
+  when: itop_appsol['output']['items'][0]['fields']['costcenter'] is not defined
+
+- name: Fail playbook when appsol owner undefined
+  fail:
+    msg: "Application solution owner is not found in iTop."
+  when:  itop_appsol['output']['items'][0]['fields']['owner'] is not defined
+
+
+- name: Fail playbook when email undefined
+  fail:
+    msg: "Email associated with application solution not found."
+  when: itop_appsol_email['output']['items'][0]['fields']['email'] is not defined
+

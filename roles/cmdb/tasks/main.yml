@@ -1,0 +1,119 @@
+---
+# We decided to split the orgs for the Windows team for overseas folks.
+# Default to org 1 and switch to the others based on the vCenter.
+- name: Set iTop CI for base iTop org
+  set_fact:
+    itoporg: 1
+
+- name: Get iTop facts about server (VM)
+  ansible2itop:
+    action: 'get'
+    itop_url: 'https://itop.company.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'VirtualMachine'
+    oql_query: "SELECT VirtualMachine WHERE name = '{{swvm['name']}}'"
+    validate_certs: no
+    itop_fields: 'id,name'
+  register: itop_ci_vm_exists
+  ignore_errors: true
+
+- name: Add CI to iTop
+  plops.general.ansible2itop:
+    action: 'create'
+    itop_url: 'https://itop.company.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'VirtualMachine'
+    validate_certs: no
+    itop_fields:
+      name: "{{ swvm['name']}}"
+      org_id: "{{ itoporg | int }}"
+      osowner: "GCD Linux"
+      builder: "{{swvm['builder']}}"
+      requester: "{{swvm['requester']}}"
+      vcenter: "{{swvm['vcenter']}}"
+      datacenter: "{{swvm['datacenter']}}"
+      literalvmname: "{{ swvm['name']}}"
+      vmfolder: "{{swvm['folder']}}"
+      virtualhost_id: 12646
+      status: "implementation"
+      virtualizationprovider: "vmware"
+      datastore: "{{swvm['datastore']}}"
+      managementip: "{{serverip}}"
+  ignore_errors: true
+  register: itop_output
+  when: itop_ci_vm_exists['output']['items'][0]['fields']['id'] is not defined
+
+- name: Update iTop CI
+  plops.general.ansible2itop:
+    action: 'update'
+    itop_url: 'https://itop.company.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'VirtualMachine'
+    validate_certs: no
+    itop_key:
+      name: "{{ swvm['name']}}"
+    itop_fields:
+      org_id: "{{ itoporg | int }}"
+      osowner: "GCD Linux"
+      builder: "{{swvm['builder']}}"
+      requester: "{{swvm['requester']}}"
+      literalvmname: "{{ swvm['name']}}"
+      vcenter: "{{swvm['vcenter']}}"
+      datacenter: "{{swvm['datacenter']}}"
+      vmfolder: "{{swvm['folder']}}"
+      virtualhost_id: 12646
+      status: "implementation"
+      datastore: "{{swvm['datastore']}}"
+      virtualizationprovider: "vmware"
+      managementip: "{{serverip}}"
+  ignore_errors: true
+  register: itop_output_update
+  when: itop_ci_vm_exists['output']['items'][0]['fields']['id'] is  defined
+
+- name: Add appsol to CI link to iTop
+  plops.general.ansible2itop:
+    action: 'create'
+    itop_url: 'https://itop.company.com/itop/web/webservices/rest.php?version=1.3'
+    username: "{{itop_username}}"
+    password: "{{itop_password}}"
+    itop_class: 'lnkApplicationSolutionToFunctionalCI'
+    validate_certs: no
+    itop_fields:
+      applicationsolution_id: "SELECT ApplicationSolution WHERE name LIKE '{{swvm['applicationsolution']}}'"
+      functionalci_id: "SELECT VirtualMachine WHERE status!='decommissioned' AND name LIKE '{{swvm['name']}}'"
+  register: itop_lnk_output
+  ignore_errors: true
+
+- name: Query Service Now if server exists 
+  servicenow_cmdb.snow_ci:
+    action: "get"
+    snow_url: "https://servicenow.company.com"
+    table_name: "cmdb_ci_linux_server"
+    sn_username: "{{ sn_username }}"
+    sn_password: "{{ sn_password }}"
+    validate_certs: no
+    query: "name={{ swvm['name'] }}"
+  register: snow_exists
+
+- name: Create CI in Service Now only if it doesnt exist
+  servicenow_cmdb.snow_ci:
+    action: "create"
+    snow_url: "https://servicenow.company.com"
+    table_name: "cmdb_ci_linux_server"
+    sn_username: "{{ sn_username }}"
+    sn_password: "{{ sn_password }}"
+    validate_certs: no
+    payload:
+      name: "{{ swvm['name'] }}"
+      support_group: "IT-OSS-Global Platform Operations"
+      fqdn: "{{ swvm['name'] }}.{{ swvm['domain'] }}"
+      ip_address: "{{ serverip }}"
+      comments: "{{ swvm['applicationsolution'] }}"
+      operational_status: "1"
+      install_status: "1"
+  when: snow_exists.output.result|length == 0
+  ignore_errors: true
+

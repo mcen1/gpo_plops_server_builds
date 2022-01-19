@@ -1,0 +1,5 @@
+pymysql
+py-zabbix
+ruamel.yaml
+dnspython
+pyyaml

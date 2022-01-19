@@ -1,0 +1,9 @@
+# how long to wait for the OS install to take.
+# increase for really bad sites
+# this example checks every 30 seconds 120 times, so it's checking for an hour every 30 seconds
+# swwait is for how long to wait before the first check (to help minimize vCenter traffic)
+swsitelatency:
+  swretries: 90
+  swdelay: 360
+  swwait: 1263
+  puppetretries: 60

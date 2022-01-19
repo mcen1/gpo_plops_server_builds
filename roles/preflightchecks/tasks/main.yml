@@ -1,0 +1,17 @@
+---
+- name: Check if VM already exists in vCenter
+  community.vmware.vmware_guest_find:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: '{{swvm["name"]}}'
+    validate_certs: no
+  ignore_errors: true
+  no_log: true
+  register: vm_exists
+
+- name: Fail if VM exists
+  fail:
+    msg: "VM already exists. {{vm_exists}}"
+  when: vm_exists['folders'] is defined and (swvm['teardown'] is not defined or (swvm['teardown'] is defined and not swvm['teardown']))
+

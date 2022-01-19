@@ -1,0 +1,25 @@
+---
+- name: Power off VM for OS install
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{  swvm['vcenter']  }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: "{{swvm['name']}}"
+    folder: "{{vm_exists['folders'][0]}}" 
+    state: powered-off
+    validate_certs: no
+
+- name: Delete virtual machine
+  vmware_guest:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    name: "{{swvm['name']}}"
+    state: absent
+    datacenter: '{{swvm["datacenter"]}}'
+    cluster: '{{swvm["cluster"]}}'
+
+
+
+

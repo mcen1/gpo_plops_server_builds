@@ -1,0 +1,73 @@
+---
+- name: Get from Patching Calendar
+  uri:
+    url: "https://calendar.company.com/ords/apex_ts/rcal/hostgetstrat?host={{ swvm['name'] }}"
+    method: GET
+    return_content: yes
+    headers:
+      "Content-Type": "application/json"
+      "Accept":       "application/json"
+      "Cache-Control": "no-cache"
+    status_code: 200
+    body_format: json
+    validate_certs: no
+  register: calresults
+  retries: 10
+  delay: 30
+  ignore_errors: true
+
+
+- block:
+  - name: set env if prod
+    set_fact:
+      event_env: "Production"
+    when: swvm['pupconfigfile'].find("prod") != -1
+
+  - name: set env if dev
+    set_fact:
+      event_env: "Development"
+    when: swvm['pupconfigfile'].find("dev") != -1
+
+  - name: set env if qa
+    set_fact:
+      event_env: "QA"
+    when: swvm['pupconfigfile'].find("qa") != -1
+
+  - name: Pull app id from apex database
+    uri:
+      url: "https://calendar.company.com/ords/apex_ts/rcal/get_app_id?app={{ swvm['applicationsolution'] | replace(' ','+') }}"
+      method: GET
+      status_code: 200
+    register: get_id
+    retries: 10
+    delay: 30
+    ignore_errors: true
+
+  - name: Create event based on criteria
+    uri:
+      url: "https://calendar.company.com/ords/apex_ts/rcal/create_event?event_title={{ swvm['name'] }}+Patching&event_desc=Patching+event+created+via+automation+by+{{ swvm['builder'] }}&event_host={{ swvm['name'] }}.{{ swvm['domain'] }}&event_env={{ event_env }}&event_app={{ get_id.json.application_id }}"
+      method: POST
+      status_code: 200
+    register: create_event
+    ignore_errors: true
+
+  - name: Get patching days based on criteria
+    uri:
+      url: "https://calendar.company.com/ords/apex_ts/rcal/get_dates?byday={{ patchweekint }}{{ patchday[:3] }}"
+      method: GET
+      status_code: 200
+    register: got_dates
+    retries: 10
+    delay: 30
+    ignore_errors: true
+
+  - name: Populate event dates
+    uri:
+      url: "https://calendar.company.com/ords/apex_ts/rcal/add_dates?event_id={{ create_event.json.temp_id }}&input_dates={{ item.value | replace('00:00',patchtime) | replace(' ','+') | replace(':','%3A') | replace('\n','%0A') }}"
+      method: POST
+      body_format: form-urlencoded
+      status_code: 200
+    with_dict: "{{ got_dates.json['items'] }}"
+    ignore_errors: true
+    register: patchcalresults
+  when: (calresults.json.count is defined and calresults.json.count|int<1) and not usremotesite and (swvm["vcenter"].find("vcenter1") != -1 or swvm["vcenter"].find("vcenter2") != -1 or swvm["name"].find("omitmetestserver") != -1)

@@ -1,0 +1,122 @@
+- name: Fail if too egregious
+  fail:
+    msg: There is something disturbingly wrong about your hostname.
+  when: > 
+    swvm['name'] + '.' + swvm['domain'] == ".company.com" or 
+    swvm['name'] + '.' + swvm['domain'] == ".subdomain.company.com" or 
+    swvm['name'] == "company.com" or 
+    swvm['name'] == "subdomain.company.com"
+
+- name: Check if IP address already in Infoblox 
+  set_fact: ipaddressinuse={{ lookup('dig', "{{swvm['name']}}.{{swvm['domain']}}") }}
+
+- name: Display output
+  debug:
+    msg: "{{ipaddressinuse}}"
+
+- name: Pause for random interval less than 93 seconds
+  pause:
+    seconds: "{{ 62 | random }}"
+  when: '"NXDOMAIN"  in ipaddressinuse'
+
+- name: Set IP if already exists
+  set_fact:
+    serverip: "{{ipaddressinuse}}"
+  when: '"NXDOMAIN" not in ipaddressinuse'
+
+- name: Set provider
+  set_fact:
+    infobloxprovider:
+      host: 10.240.3.5
+      username: "{{rundeckaccount}}"
+      password: "{{rundeckpassword}}"
+
+- name: Check if locked
+  uri:
+    url: "https://provisionapi.company.com/get_lock/infobloxapilock{{swvm['foremansubnet']}}"
+    method: GET
+    return_content: yes
+    status_code: 200
+    body_format: json
+    validate_certs: no
+  register: result
+  until: result.json.status != "LOCKED"
+  retries: 10
+  delay: "{{ 30 + (30 | random) }"
+  when: '"NXDOMAIN"  in ipaddressinuse'
+  ignore_errors: true
+
+- name: Lock via api 
+  uri:
+    url: https://provisionapi.company.com/set_lock
+    method: POST
+    body_format: json
+    body:
+      lock_name: "infobloxapilock{{swvm['foremansubnet']}}"
+      token: "{{gpoprovisiontoken}}"
+      ttl: 60
+      comment: "Locked by Linux IaC provisioning"
+    validate_certs: no
+  when: '"NXDOMAIN"  in ipaddressinuse'
+  ignore_errors: true
+
+- name:
+  set_fact:
+    myfilteredips: []
+
+- name: Set subnet variable
+  set_fact:
+    mysubnet: "{{swvm['foremansubnet']}}"
+  when: '"NXDOMAIN"  in ipaddressinuse'
+
+- name: Build a list of all the filtered IP addresses.
+  set_fact:
+    myfilteredips: "{{ myfilteredips }} + [ '{{mysubnet.split('.')[0]}}.{{mysubnet.split('.')[1]}}.{{mysubnet.split('.')[2]}}.{{ item }}' ]"
+  with_sequence: start=0 end=20
+  when: '"NXDOMAIN"  in ipaddressinuse'
+
+- name: return the next 7 available IP addresses for network 
+  set_fact:
+    ipaddr: "{{ lookup('nios_next_ip', '{{mysubnet}}/24', num=7, exclude=myfilteredips, provider=infobloxprovider) }}"
+  when: '"NXDOMAIN"  in ipaddressinuse'
+
+- name: Print what IP we are going to assign to
+  debug:
+    msg: "Available IP addresses: {{ipaddr}}"
+  when: '"NXDOMAIN"  in ipaddressinuse'
+
+- name: Pick an IP that isn't responding to pings and isn't in DNS already
+  shell: python3 supporting_tools/checkips.py "{{ipaddr}}"
+  register: ipoutput
+  when: '"NXDOMAIN"  in ipaddressinuse'
+
+- name: configure an ipv4 host record
+  nios_host_record:
+    name: "{{swvm['name']}}.{{swvm['domain']}}" 
+    ipv4:
+      - address: "{{ ipoutput.stdout }}"
+    state: present
+    provider: "{{infobloxprovider}}"
+    view: Internal
+  connection: local
+  when: '"NXDOMAIN"  in ipaddressinuse'
+
+- name: Unlock via api
+  uri:
+    url: https://provisionapi.company.com/set_lock
+    method: POST
+    body_format: json
+    body:
+      lock_name: "infobloxapilock{{swvm['foremansubnet']}}"
+      token: "{{gpoprovisiontoken}}"
+      ttl: 0
+      comment: "Locked by Linux IaC provisioning"
+    validate_certs: no
+  when: '"NXDOMAIN"  in ipaddressinuse'
+  ignore_errors: true
+
+- name: Set IP from Infoblox
+  set_fact:
+    serverip: "{{ipaddr[0]}}"
+  when: '"NXDOMAIN" in ipaddressinuse'
+

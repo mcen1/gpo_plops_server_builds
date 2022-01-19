@@ -1,0 +1,24 @@
+---
+# Note: cyberark can only be ran from cputip01,cplnxjnks01,cplnxjnks02 due to
+# IP address restrictions. Contact Aaron Pugel/Alex Konangi if you need to add
+# more servers.
+- name: Set cyberark safe default
+  set_fact:
+    cyberarksafe: "SW-Lin-Svr-Root-Corp"
+
+- name: Set cyberark safe for GSC
+  set_fact:
+    cyberarksafe: "SW-Lin-Svr-Root-GSC"
+  when:  '"gsc" in swvm["puppetfacts"]'
+
+- name: Add to cyberark
+  shell: "python3 supporting_tools/cyberark.py add '{{cyberarksafe}}' '{{swvm['name']}}' '{{rootpass.stdout}}'"
+  ignore_errors: true
+  register: cyberark_out
+
+- name: Rotate cyberark password
+  shell: "nohup python3 supporting_tools/cyberark.py change '{{cyberark_out.stdout}}'  > /dev/null 2>&1 &"
+  ignore_errors: true
+  register: cyberark_out
+  when: cyberark_out.failed is defined and not cyberark_out.failed
+

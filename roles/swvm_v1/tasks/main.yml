@@ -1,0 +1,228 @@
+---
+- name: Include preflight checks
+  include_role:
+    name: "preflightchecks"
+
+- name: Include generated vars 
+  include_role:
+    name: "generatedvars"
+
+- name: Decom from puppetmaster
+  include_role:
+    name: "decompuppet"
+
+- name: Include teardown role
+  include_role:
+    name: teardownvm
+  when: vm_exists['folders'] is defined and swvm['teardown'] is defined and swvm['teardown']
+
+- name: Generate IP
+  include_role:
+    name: "generateip"
+  when: swvm['ip']=='autogen'
+
+- name: Create virtual machine
+  vmware_guest:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    folder: '{{swvm["folder"]}}'
+    name: '{{swvm["name"]}}'
+    state: poweredoff
+    guest_id: '{{swvm["guestid"]}}'
+    datacenter: '{{swvm["datacenter"]}}'
+    # This is hostname of particular ESXi server on which user wants VM to be deployed
+    cluster: '{{swvm["cluster"]}}'
+    disk:
+    - size_gb: "{{swvm['osdisk']|default(50)}}"
+      type: thin
+      datastore: '{{swvm["datastore"]}}'
+    hardware:
+      memory_mb: "{{swvmspec['memory']}}"
+      num_cpus: "{{swvmspec['cpus']}}"
+      scsi: "{{swvmspec['scsi']}}"
+      hotadd_cpu: "{{swvmspec['hotaddcpu']}}"
+      hotadd_memory: "{{swvmspec['hotaddmemory']}}"
+      num_cpu_cores_per_socket:  "{{swvmspec['coresper']}}"
+    networks:
+    - name: "{{swvm['network']}}"
+      device_type: "{{swvmspec['nictype']}}"
+    wait_for_ip_address: no
+  register: deploy_vm
+
+#- debug: 
+#    msg: "{{deploy_vm}}"
+
+# Create SCSI controllers and add VMDKs if list is set
+- name: Attach additional vmdks
+  vmware_guest:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    folder: '{{swvm["folder"]}}'
+    name: '{{swvm["name"]}}'
+    cluster: '{{swvm["cluster"]}}'
+    disk:
+    - size_gb: "{{ item }}"
+      type: thin
+      datastore: '{{swvm["datastore"]}}'
+      controller_type: "{{swvmspec['scsi']}}"
+      controller_number: "{{ansible_loop.index|int}}"
+      unit_number: 0
+  loop: "{{swvm['vmdks']}}"
+  loop_control:
+    extended: yes
+
+
+- name: Include foreman ISO role
+  include_role: 
+    name: "foremaniso"
+
+- name: Include attach ISO role
+  include_role:
+    name: "attachiso"
+
+- name: Add virtual machine custom attributes
+  community.vmware.vmware_guest_custom_attributes:
+    hostname: "{{  swvm['vcenter']  }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: "{{swvm['name']}}"
+    folder: "{{swvm['folder']}}"
+    datacenter: "{{swvm['datacenter']}}"
+    state: present
+    validate_certs: no
+    attributes:
+      - name: "vm.environment.name"
+        value: "{{ swvm['pupconfigfile'].split('_')[1]|title }}"
+      - name: "vm.build.type" 
+        value: "Automated"
+      - name: "vm.app.title"
+        value: "{{swvm['applicationsolution']}}"
+      - name: "vm.environment.tier"
+        value: "1"
+      - name: "vm.build.by"
+        value: "{{swvm['builder']}}" 
+      - name: "vm.contact"
+        value: "{{swvm['builder']}}" 
+      - name: "vm.build.date"
+        value: "{{current_date.stdout}}"
+      - name: "vm.expiration.date"
+        value: "{{expiration_date.stdout}}"
+      - name: "sw.app.grpemail"
+        value: "{{itop_appsol_email['output']['items'][0]['fields']['email']}}"
+      - name: "vm.build.costcenter"
+        value: "{{ itop_appsol['output']['items'][0]['fields']['costcenter'] }}"
+      - name: "sw.app.contact"
+        value: "{{ itop_appsol['output']['items'][0]['fields']['owner'] }}"
+      - name: "vm.build.requestor"
+        value: "{{swvm['requester']}}"
+      - name: "vm.notools"
+        value: "False"
+      - name: "vm.expiration.renewable"
+        value: "Yes"
+      - name: "vm.hw.upgradable"
+        value: "True"
+
+
+- name: Power on VM for OS install
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{  swvm['vcenter']  }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: "{{swvm['name']}}"
+    folder: "{{deploy_vm['instance']['hw_folder']}}"
+    state: powered-on
+    validate_certs: no
+
+# We wait a minimal amount of time before checking if VM is off
+# because an OS is unlikely to finish before 7 minutes have passed.
+# We don't want to flood vCenter with logins to check status unnecessarily.
+- name: Wait {{swsitelatency['swwait'] }} seconds before checking if VM OS install finished
+  shell: sleep {{swsitelatency['swwait'] | int }}
+
+# Check for the VM to be powered off. If so, assume the OS finished and is off
+- name: Wait for the virtual machine to finish installing OS. If this fails, something went wrong with OS install. Check VM console for progress.
+  community.vmware.vmware_guest_info:
+    hostname: "{{  swvm['vcenter']  }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: "{{swvm['name']}}"
+    folder: "{{swvm['folder']}}"
+    datacenter: "{{swvm['datacenter']}}"
+    validate_certs: no
+  register: vminfo
+  until: vminfo.instance.hw_power_status!="poweredOn"
+  retries: "{{ swsitelatency['swretries'] | int }}"
+  delay: "{{swsitelatency['swdelay'] | int }}"
+
+- name: Unattach ISO from VM
+  community.vmware.vmware_guest:
+    hostname: "{{ swvm['vcenter'] }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    folder: "{{swvm['folder']}}"
+    name: "{{swvm['name']}}"
+    cluster: "{{swvm['cluster']}}"
+    datacenter: "{{swvm['datacenter']}}"
+    cdrom:
+      - controller_number: 0
+        unit_number: 0
+        state: present
+        type: client
+
+- name: Delete ISO file from datastore
+  community.vmware.vsphere_file:
+    host: "{{  swvm['vcenter']  }}"
+    username: '{{ vcenter_username }}'
+    password: '{{ vcenter_password }}'
+    datacenter: '{{compatisopath}}'
+    datastore: '{{deploy_vm["instance"]["hw_datastores"][0]}}'
+    path: "ansible-cache/{{swvm['name']}}.iso"
+    state: absent
+    validate_certs: no
+    timeout: 300
+
+- name: Power on VM post OS install
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{  swvm['vcenter']  }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: "{{swvm['name']}}"
+    folder: "{{deploy_vm['instance']['hw_folder']}}"
+    state: powered-on
+    validate_certs: no
+
+# Adds to iTop and Service Now
+- name: Include CMDB role
+  include_role: 
+    name: "cmdb"
+
+- name: Include Zabbix role
+  include_role:
+    name: "add2zabbix"
+
+- name: Include utipdb role
+  include_role:
+    name: "utipdb"
+
+- name: Include Cyberark role
+  include_role:
+    name: "add2cyberark"
+
+- name: Include patching calendar role
+  include_role:
+    name: "add2calendar"
+
+# We wait for the server to register with Puppet before doing post-install steps
+- name: Include wait4puppet role
+  include_role:
+    name: "wait4puppet"
+
+# Sends an email summary to builder and posts to teams
+- name: Include communicatestatus role
+  include_role:
+    name: "communicatestatus"

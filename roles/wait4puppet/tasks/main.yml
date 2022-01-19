@@ -1,0 +1,15 @@
+---
+- name: Check if server registers with puppet
+  uri:
+    url: "https://provisionapi.server.com/in_puppet/{{swvm['name']}}"
+    method: GET
+    return_content: yes
+    status_code: 200
+    body_format: json
+    validate_certs: no
+  register: inpuppetresult
+  until: inpuppetresult.json.in_puppet == "True"
+  retries: "{{ swsitelatency['puppetretries'] | int }}"
+  delay: 60
+  ignore_errors: true
+

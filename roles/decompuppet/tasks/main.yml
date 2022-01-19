@@ -1,0 +1,6 @@
+---
+- name: Run puppet decom script on cpopupmasp01
+  shell: /usr/local/sbin/decompuppet.sh "{{swvm['name']}}.{{swvm['domain']}}"
+  ignore_errors: true
+  become: true
+  delegate_to: "puppetmaster.company.com"
